@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Disco Launcher Prism-minimal palette (matches desktop #7C8CF8 / #A5B4FC). -->
+    <color name="disco_primary">#7C8CF8</color>
+    <color name="disco_accent">#A5B4FC</color>
+    <color name="ic_launcher_background">#161A22</color>
+</resources>
