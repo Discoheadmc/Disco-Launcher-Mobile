@@ -4,6 +4,7 @@ import android.content.Context
 import com.discocock.launcher.data.AccountsRepository
 import com.discocock.launcher.data.InstancesRepository
 import com.discocock.launcher.data.SettingsRepository
+import com.discocock.launcher.game.DownloadManager
 import com.discocock.launcher.game.GameInstaller
 import com.discocock.launcher.game.GameLauncher
 import com.discocock.launcher.game.MrpackInstaller
