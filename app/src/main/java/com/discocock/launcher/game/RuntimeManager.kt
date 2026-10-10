@@ -39,27 +39,27 @@ data class RuntimeCatalogEntry(
 
 /**
  * Shared runtime catalog — PojavLauncherTeam's android-openjdk JRE builds
- * (verified release assets). The java binary inside these tarballs is
- * `release/bin/java`; custom packages can override it via the custom URL flow.
+ * (verified release assets; the tarballs extract to `bin/java`, `lib/…`).
+ * Custom packages can override the java path via the custom URL flow.
  */
 val RUNTIME_CATALOG: List<RuntimeCatalogEntry> = listOf(
     RuntimeCatalogEntry(
         name = "jre17-arm64",
         version = "JRE 17 · android arm64",
         url = "https://github.com/PojavLauncherTeam/android-openjdk-build-multiarch/releases/download/jre17-ec28559/jre17-arm64-20210825-release.tar.xz",
-        javaBinary = "release/bin/java",
+        javaBinary = "bin/java",
     ),
     RuntimeCatalogEntry(
         name = "jre17-arm",
         version = "JRE 17 · android arm (32-bit)",
         url = "https://github.com/PojavLauncherTeam/android-openjdk-build-multiarch/releases/download/jre17-ec28559/jre17-arm-20210914-release.tar.xz",
-        javaBinary = "release/bin/java",
+        javaBinary = "bin/java",
     ),
     RuntimeCatalogEntry(
         name = "jre17-x86_64",
         version = "JRE 17 · android x86_64",
         url = "https://github.com/PojavLauncherTeam/android-openjdk-build-multiarch/releases/download/jre17-ec28559/jre17-x86_64-20210825-release.tar.xz",
-        javaBinary = "release/bin/java",
+        javaBinary = "bin/java",
     ),
 )
 
@@ -94,7 +94,14 @@ class RuntimeManager(private val paths: LauncherPaths) {
     suspend fun load() {
         withContext(Dispatchers.IO) {
             mutex.withLock {
-                _runtimes.value = JsonFiles.read(storeFile, RuntimeStore()).runtimes
+                val store = JsonFiles.read(storeFile, RuntimeStore())
+                // Drop entries whose java binary is missing (e.g. records from an
+                // old layout/location) so they get re-installed automatically.
+                val valid = store.runtimes.filter { javaBinaryFile(it).exists() }
+                if (valid.size != store.runtimes.size) {
+                    JsonFiles.write(storeFile, RuntimeStore(valid))
+                }
+                _runtimes.value = valid
             }
         }
     }
@@ -215,16 +222,35 @@ class RuntimeManager(private val paths: LauncherPaths) {
                 if (!out.canonicalPath.startsWith(target.canonicalPath)) {
                     throw IOException("Arşiv girişi hedef dışına çıkıyor: ${entry.name}")
                 }
-                if (entry.isDirectory) {
-                    out.mkdirs()
-                } else {
-                    out.parentFile?.mkdirs()
-                    out.outputStream().use { tar.copyTo(it) }
-                    // Preserve the owner-executable bit (java, javac, ...)
-                    if (entry.mode and 256 != 0) out.setExecutable(true)
+                when {
+                    entry.isDirectory -> out.mkdirs()
+                    // Symbolic links: recreate them (JRE trees rely on them
+                    // for lib/server, lib/jli, ...); fall back to a copy.
+                    entry.isSymbolicLink -> {
+                        val linkTarget = entry.linkName
+                        out.parentFile?.mkdirs()
+                        if (out.exists()) out.delete()
+                        try {
+                            java.nio.file.Files.createSymbolicLink(
+                                out.toPath(),
+                                java.nio.file.Paths.get(linkTarget),
+                            )
+                        } catch (e: Exception) {
+                            val resolved = File(out.parentFile, linkTarget)
+                            if (resolved.exists()) resolved.copyTo(out, overwrite = true)
+                        }
+                    }
+                    else -> {
+                        out.parentFile?.mkdirs()
+                        out.outputStream().use { tar.copyTo(it) }
+                    }
                 }
                 entry = tar.nextTarEntry
             }
+        }
+        // The java launcher and its helpers must be executable.
+        File(target, "bin").takeIf { it.isDirectory }?.listFiles()?.forEach {
+            if (it.isFile) it.setExecutable(true, false)
         }
     }
 }

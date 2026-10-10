@@ -7,6 +7,8 @@ import java.io.File
 data class GameLaunchSpec(
     val command: List<String>,
     val workingDir: File,
+    /** Extra environment for the JVM process (LD_LIBRARY_PATH, HOME, ...). */
+    val env: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -56,6 +58,18 @@ object JvmCommandBuilder {
             gameArgs += listOf("--server", instance.serverAddress)
         }
 
+        // The JVM needs its shared libraries (libjvm.so, libjli.so, ...) and a
+        // writable HOME/TMPDIR inside app storage.
+        val jreHome = javaBin.parentFile?.parentFile ?: javaBin
+        val libPath = listOf("lib", "lib/jli", "lib/server", "lib/jli/aarch64", "lib/aarch64")
+            .joinToString(":") { File(jreHome, it).absolutePath }
+        val env = mapOf(
+            "HOME" to instanceDir.absolutePath,
+            "TMPDIR" to instanceDir.absolutePath,
+            "LD_LIBRARY_PATH" to libPath,
+            "JAVA_HOME" to jreHome.absolutePath,
+        )
+
         val command = buildList {
             add(javaBin.absolutePath)
             addAll(jvmArgs)
@@ -64,6 +78,6 @@ object JvmCommandBuilder {
             add(info.mainClass)
             addAll(gameArgs)
         }
-        return GameLaunchSpec(command = command, workingDir = instanceDir)
+        return GameLaunchSpec(command = command, workingDir = instanceDir, env = env)
     }
 }

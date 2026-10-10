@@ -37,6 +37,7 @@ class GameLauncher(@Suppress("unused") private val paths: LauncherPaths) {
             val proc = ProcessBuilder(spec.command)
                 .directory(spec.workingDir)
                 .redirectErrorStream(true)
+                .apply { environment().putAll(spec.env) }
                 .start()
             process = proc
             _state.value = LaunchState.Running(emptyList())

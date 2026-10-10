@@ -53,7 +53,10 @@ Hedef: 1.16+ vanilla'nın Android'de açılıp ana menüyü göstermesi.
 
 - Oyun GL init'inde durur: LWJGL-Android köprüsü olmadan JVM ana menüye
   ulaşamaz (Aşama 1). Kurulum/çalıştırma günlüğünde net hata görünür.
+- **1.20.5+ Java 21 gerektirir**; katalogda henüz JRE 21 yok (Pojav
+  depolarında sadece jre17/jre8 var). JRE 17 ile 1.17–1.20.4 çalışır.
 - `targetSdk` bilinçli olarak 28: exec() izni için. Aşama 1'de JNI ile yükselir.
+- JRE, exec izni olan **dahili depoda** tutulur (harici depolama `noexec`).
 - SHA1 doğrulaması atlanıyor (indirmeler boyut kontrolüyle).
 - Mod yükleyiciler ve natives classifier'ları henüz yok.
 - Microsoft client_id varsayılan boş — Ayarlar'dan girilmeli (kendi Azure

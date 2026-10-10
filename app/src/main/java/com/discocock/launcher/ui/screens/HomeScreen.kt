@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
@@ -52,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.discocock.launcher.DiscoApplication
@@ -83,6 +87,7 @@ fun HomeScreen(onOpenVersions: () -> Unit, onOpenRuntime: () -> Unit) {
     var showCreateDialog by remember { mutableStateOf(false) }
     var detailInstance by remember { mutableStateOf<Instance?>(null) }
     var launchError by remember { mutableStateOf<String?>(null) }
+    var showLog by remember { mutableStateOf(false) }
     val activeAccount = accounts.firstOrNull { it.id == activeId }
 
     Scaffold(
@@ -278,6 +283,7 @@ fun HomeScreen(onOpenVersions: () -> Unit, onOpenRuntime: () -> Unit) {
                     detailInstance = null
                 }
             },
+            onShowLog = { showLog = true },
             onDelete = {
                 detailInstance = null
                 scope.launch { container.instances.delete(instance.id) }
@@ -286,16 +292,54 @@ fun HomeScreen(onOpenVersions: () -> Unit, onOpenRuntime: () -> Unit) {
     }
 
     launchState.let { state ->
-        if (state is com.discocock.launcher.game.GameLauncher.LaunchState.Failed) {
-            AlertDialog(
-                onDismissRequest = { launchError = null; container.launcher.acknowledge() },
-                title = { Text("Başlatılamadı") },
-                text = { Text(state.message) },
-                confirmButton = {
-                    TextButton(onClick = { container.launcher.acknowledge() }) { Text("Tamam") }
-                },
-            )
+        when (state) {
+            is com.discocock.launcher.game.GameLauncher.LaunchState.Failed -> {
+                AlertDialog(
+                    onDismissRequest = { container.launcher.acknowledge() },
+                    title = { Text("Başlatılamadı") },
+                    text = { Text(state.message) },
+                    confirmButton = {
+                        TextButton(onClick = { container.launcher.acknowledge() }) { Text("Tamam") }
+                    },
+                )
+            }
+            is com.discocock.launcher.game.GameLauncher.LaunchState.Exited -> {
+                AlertDialog(
+                    onDismissRequest = { container.launcher.acknowledge() },
+                    title = { Text("Oyun çıktı — kod ${state.code}") },
+                    text = {
+                        Column {
+                            Text(
+                                if (state.code == 0) "Normal çıkış." else "JVM çalıştı ve sonlandı.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                state.log.takeLast(24).joinToString("\n"),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 24,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { container.launcher.acknowledge() }) { Text("Tamam") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = {
+                            showLog = true
+                            container.launcher.acknowledge()
+                        }) { Text("Tüm log") }
+                    },
+                )
+            }
+            else -> Unit
         }
+    }
+
+    if (showLog) {
+        LogDialog(lines = container.launcher.logSnapshot(), onDismiss = { showLog = false })
     }
 
     launchError?.let { message ->
@@ -329,13 +373,13 @@ private suspend fun launchHomeInstance(
     val runtime = container.runtimes.activeRuntime(container.settings.preferredRuntime.first())
     if (runtime == null) {
         val downloading = container.downloads.active.value.isNotEmpty()
+        if (!downloading) {
+            // JRE otomatik kurulumunu arka planda başlat
+            container.downloads.ensureRuntime(container.settings.preferredRuntime.first())
+        }
         onError(
-            if (downloading) {
-                "Java runtime hâlâ indiriliyor — bitmesini bekle ya da indirmeyi durdurup elle kur."
-            } else {
-                "Java runtime kurulu değil.\n\nBir instance oluşturunca cihazına uygun JRE otomatik indirilir " +
-                    "veya Java Runtime ekranından elle kurabilirsin."
-            },
+            "Java runtime hazır değil — cihazına uygun JRE otomatik indiriliyor. " +
+                "İndirme bitince tekrar Başlat.",
         )
         return
     }
@@ -489,6 +533,15 @@ private fun CreateInstanceDialog(
                     Spacer(Modifier.height(6.dp))
                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
+                if (selectedVersion != null && requiresJava21(selectedVersion)) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "⚠ Bu sürüm Java 21 gerektirir; katalogda henüz yok. " +
+                            "JRE 17 ile çalışan 1.20.4 ve altını öneriyoruz.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         },
         confirmButton = {
@@ -506,6 +559,36 @@ private fun CreateInstanceDialog(
     )
 }
 
+/** 1.20.5+ needs Java 21, which is not in the runtime catalog yet. */
+private fun requiresJava21(versionId: String?): Boolean {
+    if (versionId == null) return false
+    val match = Regex("""^1\.(\d+)(?:\.(\d+))?""").find(versionId) ?: return false
+    val minor = match.groupValues[1].toIntOrNull() ?: return false
+    val patch = match.groupValues[2].toIntOrNull() ?: 0
+    return minor > 20 || (minor == 20 && patch >= 5)
+}
+
+@Composable
+private fun LogDialog(lines: List<String>, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Oyun günlüğü (${lines.size} satır)") },
+        text = {
+            LazyColumn(modifier = Modifier.height(320.dp)) {
+                items(lines) { line ->
+                    Text(
+                        line,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Kapat") } },
+    )
+}
+
 @Composable
 private fun InstanceDetailDialog(
     instance: Instance,
@@ -515,6 +598,7 @@ private fun InstanceDetailDialog(
     onLaunch: () -> Unit,
     onInstall: () -> Unit,
     onSave: (ramMb: Int, serverAddress: String) -> Unit,
+    onShowLog: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -591,6 +675,11 @@ private fun InstanceDetailDialog(
                         Spacer(Modifier.width(4.dp))
                         Text("Kur")
                     }
+                }
+                TextButton(onClick = onShowLog) {
+                    Icon(Icons.Filled.Description, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Log")
                 }
                 IconButton(onClick = onDelete) {
                     Icon(
