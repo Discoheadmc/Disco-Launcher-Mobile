@@ -18,9 +18,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -34,13 +38,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.discocock.launcher.DiscoApplication
 import com.discocock.launcher.ui.theme.AccentChoices
 import com.discocock.launcher.ui.theme.LocalLaunchButtonColor
 import kotlinx.coroutines.launch
 
-/** Appearance + integration settings, mirroring the desktop Prism-minimal theme. */
+/** Launcher + appearance settings, mirroring the desktop Prism-minimal theme. */
 @Composable
 fun SettingsScreen() {
     val context = LocalContext.current
@@ -50,12 +55,20 @@ fun SettingsScreen() {
     val accent by container.settings.accentColor.collectAsState(initial = "indigo")
     val launchButtonHex by container.settings.launchButtonColor.collectAsState(initial = "")
     val clientId by container.settings.microsoftClientId.collectAsState(initial = "")
+    val defaultMemory by container.settings.defaultMemoryMb.collectAsState(initial = 2048)
+    val jvmArgs by container.settings.extraJvmArgs.collectAsState(initial = "")
+    val preferredRuntime by container.settings.preferredRuntime.collectAsState(initial = "")
+    val runtimes by container.runtimes.runtimes.collectAsState()
 
     var launchButtonInput by remember { mutableStateOf(launchButtonHex) }
     var clientInput by remember { mutableStateOf(clientId) }
+    var jvmArgsInput by remember { mutableStateOf(jvmArgs) }
+    var memoryInput by remember { mutableStateOf(defaultMemory.toFloat()) }
 
     LaunchedEffect(launchButtonHex) { launchButtonInput = launchButtonHex }
     LaunchedEffect(clientId) { clientInput = clientId }
+    LaunchedEffect(jvmArgs) { jvmArgsInput = jvmArgs }
+    LaunchedEffect(defaultMemory) { memoryInput = defaultMemory.toFloat() }
 
     Column(
         Modifier
@@ -64,9 +77,102 @@ fun SettingsScreen() {
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Text("Ayarlar", style = MaterialTheme.typography.headlineSmall)
+
+        // ---------------- Launcher ayarları ----------------
+        Spacer(Modifier.height(16.dp))
+        Text("Launcher Ayarları", style = MaterialTheme.typography.titleMedium)
+
+        Text(
+            "Varsayılan Java RAM (yeni instance'lar)",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "${memoryInput.toInt()} MB",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Slider(
+            value = memoryInput,
+            onValueChange = { memoryInput = it },
+            onValueChangeFinished = {
+                scope.launch { container.settings.setDefaultMemoryMb(memoryInput.toInt()) }
+            },
+            valueRange = 512f..8192f,
+            steps = 29,
+        )
+
+        Spacer(Modifier.height(10.dp))
+        OutlinedTextField(
+            value = jvmArgsInput,
+            onValueChange = { jvmArgsInput = it },
+            label = { Text("Ek JVM argümanları") },
+            placeholder = { Text("-XX:+UseG1GC -Dfml.earlyprogresswindow=false") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(6.dp))
+        Button(onClick = { scope.launch { container.settings.setExtraJvmArgs(jvmArgsInput) } }) {
+            Text("Kaydet")
+        }
+
+        Spacer(Modifier.height(16.dp))
+        Text("Java Runtime", style = MaterialTheme.typography.titleSmall)
+        if (runtimes.isEmpty()) {
+            Text(
+                "Kurulu runtime yok — bir instance oluşturunca cihazına uygun JRE otomatik indirilir.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { scope.launch { container.settings.setPreferredRuntime("") } },
+        ) {
+            RadioButton(
+                selected = preferredRuntime.isBlank(),
+                onClick = { scope.launch { container.settings.setPreferredRuntime("") } },
+            )
+            Column {
+                Text("Otomatik", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "İlk kurulu runtime kullanılır",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        runtimes.forEach { runtime ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { scope.launch { container.settings.setPreferredRuntime(runtime.name) } },
+            ) {
+                RadioButton(
+                    selected = preferredRuntime == runtime.name,
+                    onClick = { scope.launch { container.settings.setPreferredRuntime(runtime.name) } },
+                )
+                Column {
+                    Text(runtime.name, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        runtime.version,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider()
         Spacer(Modifier.height(16.dp))
 
-        // Accent color — the 8 Prism-minimal swatches.
+        // ---------------- Görünüm ----------------
         Text("Vurgu rengi", style = MaterialTheme.typography.titleMedium)
         Text(
             "Masaüstü Disco Launcher'ın 8 renk seçicisi",
@@ -91,7 +197,6 @@ fun SettingsScreen() {
         }
         Spacer(Modifier.height(20.dp))
 
-        // Custom launch-button color (mode-independent, like the desktop).
         Text("Başlat butonu rengi", style = MaterialTheme.typography.titleMedium)
         Text(
             "#RRGGBB — boş bırakılırsa tema rengi kullanılır",
@@ -107,7 +212,7 @@ fun SettingsScreen() {
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = { scope.launch { container.settings.setLaunchButtonColor(launchButtonInput.trim()) } },
                 colors = if (LocalLaunchButtonColor.current == Color.Unspecified) {
@@ -116,13 +221,16 @@ fun SettingsScreen() {
                     ButtonDefaults.buttonColors(containerColor = LocalLaunchButtonColor.current)
                 },
             ) { Text("Kaydet") }
-            TextButtonClear {
-                scope.launch { container.settings.setLaunchButtonColor("") }
+            TextButton(onClick = { scope.launch { container.settings.setLaunchButtonColor("") } }) {
+                Text("Sıfırla")
             }
         }
-        Spacer(Modifier.height(20.dp))
 
-        // Microsoft client id.
+        Spacer(Modifier.height(20.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(16.dp))
+
+        // ---------------- Hesap entegrasyonu ----------------
         Text("Microsoft client_id", style = MaterialTheme.typography.titleMedium)
         Text(
             "Xbox Live destekli ücretsiz bir Azure uygulaması açıp client_id'yi buraya yapıştır; " +
@@ -142,8 +250,8 @@ fun SettingsScreen() {
         Button(onClick = { scope.launch { container.settings.setMicrosoftClientId(clientInput) } }) {
             Text("Kaydet")
         }
-        Spacer(Modifier.height(24.dp))
 
+        Spacer(Modifier.height(24.dp))
         Text("Hakkında", style = MaterialTheme.typography.titleMedium)
         Text(
             "Disco Launcher Mobile 0.1.0 — XMCL tabanlı Disco Launcher'ın Android portu " +
@@ -174,9 +282,4 @@ private fun AccentSwatch(color: Color, selected: Boolean, onClick: () -> Unit) {
             )
         }
     }
-}
-
-@Composable
-private fun TextButtonClear(onClick: () -> Unit) {
-    androidx.compose.material3.TextButton(onClick = onClick) { Text("Sıfırla") }
 }

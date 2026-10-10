@@ -25,6 +25,7 @@ object JvmCommandBuilder {
         librariesDir: File,
         instanceDir: File,
         account: Account,
+        extraJvmArgs: List<String> = emptyList(),
     ): GameLaunchSpec {
         val clientJar = File(File(versionsDir, instance.versionId), instance.versionId + ".jar")
         val libraryJars = librariesDir.walkTopDown()
@@ -34,11 +35,12 @@ object JvmCommandBuilder {
         val classpath = (listOf(clientJar.absolutePath) + libraryJars).joinToString(":")
 
         val memory = instance.javaMemoryMb.coerceAtLeast(512)
-        val jvmArgs = listOf(
-            "-Xms${minOf(512, memory)}M",
-            "-Xmx${memory}M",
-            "-Djava.io.tmpdir=${instanceDir.absolutePath}",
-        )
+        val jvmArgs = buildList {
+            add("-Xms${minOf(512, memory)}M")
+            add("-Xmx${memory}M")
+            add("-Djava.io.tmpdir=${instanceDir.absolutePath}")
+            addAll(extraJvmArgs)
+        }
 
         val gameArgs = mutableListOf(
             "--username", account.username,

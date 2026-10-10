@@ -36,6 +36,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,8 +57,10 @@ import com.discocock.launcher.DiscoApplication
 import com.discocock.launcher.data.Instance
 import com.discocock.launcher.game.GameInstaller
 import com.discocock.launcher.game.JvmCommandBuilder
+import com.discocock.launcher.game.RuntimeManager
 import com.discocock.launcher.net.ManifestVersion
 import com.discocock.launcher.ui.theme.LocalLaunchButtonColor
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,6 +74,7 @@ fun HomeScreen(onOpenVersions: () -> Unit, onOpenRuntime: () -> Unit) {
     val accounts by container.accounts.accounts.collectAsState()
     val activeId by container.accounts.activeId.collectAsState()
     val installProgress by container.installer.progress.collectAsState()
+    val runtimeProgress by container.runtimes.progress.collectAsState()
     val launchState by container.launcher.state.collectAsState()
     val launchButtonColor = LocalLaunchButtonColor.current
 
@@ -122,7 +126,7 @@ fun HomeScreen(onOpenVersions: () -> Unit, onOpenRuntime: () -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
-                        "${progress.stage} — ${progress.current}/${progress.total}",
+                        "Sürüm — ${progress.stage} — ${progress.current}/${progress.total}",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(8.dp))
@@ -130,6 +134,32 @@ fun HomeScreen(onOpenVersions: () -> Unit, onOpenRuntime: () -> Unit) {
                 is GameInstaller.Progress.Failed -> {
                     Text(
                         "Kurulum hatası: ${progress.message}",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                else -> Unit
+            }
+
+            val rp = runtimeProgress
+            when (rp) {
+                is RuntimeManager.RuntimeProgress.Working -> {
+                    LinearProgressIndicator(
+                        progress = {
+                            if (rp.total <= 0) 0f else rp.downloaded.toFloat() / rp.total.toFloat()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "Java runtime — ${rp.stage} — ${rp.downloaded / (1024 * 1024)}/${rp.total / (1024 * 1024)} MB",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                is RuntimeManager.RuntimeProgress.Failed -> {
+                    Text(
+                        "Runtime hatası: ${rp.message}",
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -170,8 +200,16 @@ fun HomeScreen(onOpenVersions: () -> Unit, onOpenRuntime: () -> Unit) {
             onDismiss = { showCreateDialog = false },
             onCreate = { name, versionId ->
                 scope.launch {
-                    container.instances.create(name, versionId)
-                    showCreateDialog = false
+                    // Yeni instance: varsayılan RAM ayarını al
+                    val memory = container.settings.defaultMemoryMb.first()
+                    val created = container.instances.create(name, versionId, memory)
+                    if (created.isSuccess) {
+                        showCreateDialog = false
+                        // Zorunlu kurulum: sürüm dosyaları otomatik iner
+                        container.installer.installVanilla(versionId, includeAssets = true)
+                        // Java runtime yoksa cihaza uygun paket otomatik iner
+                        container.runtimes.ensureRuntimeInstalled()
+                    }
                 }
             },
         )
@@ -190,6 +228,14 @@ fun HomeScreen(onOpenVersions: () -> Unit, onOpenRuntime: () -> Unit) {
             onInstall = {
                 scope.launch {
                     container.installer.installVanilla(instance.versionId, includeAssets = true)
+                }
+            },
+            onSave = { ram, server ->
+                scope.launch {
+                    container.instances.update(
+                        instance.copy(javaMemoryMb = ram, serverAddress = server.trim()),
+                    )
+                    detailInstance = null
                 }
             },
             onDelete = {
@@ -240,7 +286,7 @@ private suspend fun launchHomeInstance(
             return
         }
     }
-    val runtime = container.runtimes.activeRuntime()
+    val runtime = container.runtimes.activeRuntime(container.settings.preferredRuntime.first())
     if (runtime == null) {
         onError(
             "Java runtime kurulu değil.\n\nAna ekrandaki 'Java Runtime' bölümünden bir JRE paketi kur " +
@@ -258,6 +304,9 @@ private suspend fun launchHomeInstance(
         onError("Java binary bulunamadı: ${javaBin.absolutePath}")
         return
     }
+    val extraArgs = container.settings.extraJvmArgs.first()
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
     val spec = JvmCommandBuilder.build(
         javaBin = javaBin,
         instance = instance,
@@ -267,6 +316,7 @@ private suspend fun launchHomeInstance(
         librariesDir = container.paths.librariesDir,
         instanceDir = container.instances.instanceDir(instance),
         account = account,
+        extraJvmArgs = extraArgs,
     )
     container.launcher.launch(spec)
 }
@@ -419,11 +469,15 @@ private fun InstanceDetailDialog(
     onDismiss: () -> Unit,
     onLaunch: () -> Unit,
     onInstall: () -> Unit,
+    onSave: (ramMb: Int, serverAddress: String) -> Unit,
     onDelete: () -> Unit,
 ) {
     val context = LocalContext.current
     val container = (context.applicationContext as DiscoApplication).container
     val runtimes by container.runtimes.runtimes.collectAsState()
+
+    var editRam by remember(instance.id) { mutableStateOf(instance.javaMemoryMb.toFloat()) }
+    var editServer by remember(instance.id) { mutableStateOf(instance.serverAddress) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -431,18 +485,37 @@ private fun InstanceDetailDialog(
         text = {
             Column {
                 Text("Sürüm: ${instance.versionId}")
-                Text("RAM: ${instance.javaMemoryMb} MB")
-                if (instance.serverAddress.isNotBlank()) {
-                    Text("Sunucu: ${instance.serverAddress}")
-                }
                 Text(
                     if (installed) "Durum: kurulu" else "Durum: kurulmadı",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Spacer(Modifier.height(12.dp))
+
+                Text("Java RAM", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "${editRam.toInt()} MB",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Slider(
+                    value = editRam,
+                    onValueChange = { editRam = it },
+                    valueRange = 512f..8192f,
+                    steps = 29,
+                )
+
+                OutlinedTextField(
+                    value = editServer,
+                    onValueChange = { editServer = it },
+                    label = { Text("Sunucu adresi (opsiyonel)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
                 if (runtimes.isEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "Java runtime kurulu değil — başlatma için önce Runtime ekranından JRE kur.",
+                        "Java runtime kurulu değil — instance oluşturma sırasında otomatik indirilir.",
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -466,6 +539,7 @@ private fun InstanceDetailDialog(
         },
         dismissButton = {
             Row {
+                TextButton(onClick = { onSave(editRam.toInt(), editServer) }) { Text("Kaydet") }
                 if (!installed) {
                     TextButton(onClick = onInstall) {
                         Icon(Icons.Filled.Download, contentDescription = null)

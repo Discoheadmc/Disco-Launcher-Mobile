@@ -46,7 +46,7 @@ class InstancesRepository(private val context: Context, private val paths: Launc
         }
     }
 
-    suspend fun create(name: String, versionId: String): Result<Instance> {
+    suspend fun create(name: String, versionId: String, memoryMb: Int): Result<Instance> {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) {
             return Result.failure(IllegalArgumentException("Instance adı boş olamaz"))
@@ -55,6 +55,7 @@ class InstancesRepository(private val context: Context, private val paths: Launc
             id = "inst-" + System.currentTimeMillis().toString(36),
             name = trimmed,
             versionId = versionId,
+            javaMemoryMb = memoryMb,
         )
         withContext(Dispatchers.IO) {
             mutex.withLock {

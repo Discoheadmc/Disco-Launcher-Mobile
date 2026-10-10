@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.discocock.launcher.DiscoApplication
+import com.discocock.launcher.game.RUNTIME_CATALOG
 import com.discocock.launcher.game.RuntimeCatalogEntry
 import kotlinx.coroutines.launch
 
@@ -131,7 +132,7 @@ fun RuntimeScreen(onBack: () -> Unit) {
             Text("Hazır katalog", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(DEFAULT_CATALOG, key = { it.name }) { entry ->
+                items(RUNTIME_CATALOG, key = { it.name }) { entry ->
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
@@ -232,28 +233,3 @@ private fun CustomRuntimeDialog(onDismiss: () -> Unit, onInstall: (RuntimeCatalo
     )
 }
 
-/**
- * Default catalog — PojavLauncherTeam's android-openjdk JRE builds
- * (verified release assets). The java binary path inside these tarballs is
- * `release/bin/java`; custom packages can override it via the custom URL flow.
- */
-private val DEFAULT_CATALOG = listOf(
-    RuntimeCatalogEntry(
-        name = "jre17-arm64",
-        version = "JRE 17 · android arm64",
-        url = "https://github.com/PojavLauncherTeam/android-openjdk-build-multiarch/releases/download/jre17-ec28559/jre17-arm64-20210825-release.tar.xz",
-        javaBinary = "release/bin/java",
-    ),
-    RuntimeCatalogEntry(
-        name = "jre17-arm",
-        version = "JRE 17 · android arm (32-bit)",
-        url = "https://github.com/PojavLauncherTeam/android-openjdk-build-multiarch/releases/download/jre17-ec28559/jre17-arm-20210914-release.tar.xz",
-        javaBinary = "release/bin/java",
-    ),
-    RuntimeCatalogEntry(
-        name = "jre17-x86_64",
-        version = "JRE 17 · android x86_64",
-        url = "https://github.com/PojavLauncherTeam/android-openjdk-build-multiarch/releases/download/jre17-ec28559/jre17-x86_64-20210825-release.tar.xz",
-        javaBinary = "release/bin/java",
-    ),
-)
