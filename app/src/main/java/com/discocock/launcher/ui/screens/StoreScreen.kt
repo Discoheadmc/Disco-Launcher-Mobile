@@ -1,6 +1,7 @@
 package com.discocock.launcher.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,9 +13,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,9 +30,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,17 +43,24 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.discocock.launcher.DiscoApplication
+import com.discocock.launcher.game.MrpackInstaller
 import com.discocock.launcher.net.ModrinthProject
 import com.discocock.launcher.net.ModrinthVersion
+import com.discocock.launcher.util.NetFiles
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
- * Modpack store — Modrinth public API (no key needed), discovery grid like
- * the desktop launcher's store view.
+ * Modpack store — Modrinth public API (no key needed), discovery list with
+ * project icons, badges and background installs like the desktop store.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,18 +70,35 @@ fun StoreScreen() {
     val scope = rememberCoroutineScope()
 
     val instances by container.instances.instances.collectAsState()
+    val mrpackProgress by container.mrpackInstaller.progress.collectAsState()
+    val activeDownloads by container.downloads.active.collectAsState()
+
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<ModrinthProject>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var resultCount by remember { mutableStateOf(0) }
 
     var selectedProject by remember { mutableStateOf<ModrinthProject?>(null) }
     var projectVersions by remember { mutableStateOf<List<ModrinthVersion>>(emptyList()) }
     var versionsLoading by remember { mutableStateOf(false) }
 
     var installTarget by remember { mutableStateOf<ModrinthVersion?>(null) }
-    var installProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    var installMessage by remember { mutableStateOf<String?>(null) }
+
+    fun search(q: String) {
+        scope.launch {
+            loading = true
+            error = null
+            val result = runCatching { container.modrinth.searchModpacks(q) }
+            results = result.getOrDefault(emptyList())
+            resultCount = results.size
+            error = result.exceptionOrNull()?.message
+            loading = false
+        }
+    }
+
+    // Popular packs load immediately (empty query = relevance order).
+    LaunchedEffect(Unit) { search("") }
 
     Column(
         Modifier
@@ -74,67 +107,79 @@ fun StoreScreen() {
     ) {
         Text("Mağaza", style = MaterialTheme.typography.headlineSmall)
         Text(
-            "Modrinth mod paketleri — anahtar gerekmez",
+            "Modrinth mod paketleri — anahtar gerekmez, telemetri yok",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(10.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                label = { Text("Mod paketi ara") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(8.dp))
-            IconButton(
-                onClick = {
-                    scope.launch {
-                        loading = true
-                        error = null
-                        val result = runCatching { container.modrinth.searchModpacks(query) }
-                        results = result.getOrDefault(emptyList())
-                        error = result.exceptionOrNull()?.message
-                        loading = false
+        Spacer(Modifier.height(12.dp))
+
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text("Mod paketi ara") },
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { query = ""; search("") }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Temizle")
                     }
-                },
-            ) {
-                Icon(Icons.Filled.Search, contentDescription = "Ara", tint = MaterialTheme.colorScheme.primary)
+                }
+            },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { search(query) }),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (loading) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Aranıyor…", style = MaterialTheme.typography.bodySmall)
+            } else if (resultCount > 0 && error == null) {
+                Text(
+                    "$resultCount sonuç" + (if (query.isBlank()) " · popüler" else " · \"$query\""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
 
-        installProgress?.let { (current, total) ->
-            LinearProgressIndicator(
-                progress = { if (total <= 0) 0f else current.toFloat() / total },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            installMessage?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall)
+        val mp = mrpackProgress
+        when (mp) {
+            is MrpackInstaller.MrpackProgress.Working -> {
+                LinearProgressIndicator(
+                    progress = { if (mp.total <= 0) 0f else mp.current.toFloat() / mp.total },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Mod paketi — ${mp.stage} ${mp.current}/${mp.total}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(8.dp))
             }
-            Spacer(Modifier.height(8.dp))
+            is MrpackInstaller.MrpackProgress.Done -> {
+                Text(mp.message, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(8.dp))
+            }
+            is MrpackInstaller.MrpackProgress.Failed -> {
+                Text(mp.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(8.dp))
+            }
+            else -> Unit
         }
         error?.let {
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(8.dp))
         }
 
-        if (loading) {
-            Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(10.dp))
-                Text("Aranıyor…")
-            }
-        }
-
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(results, key = { it.id }) { project ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
+                ProjectCard(
+                    project = project,
                     onClick = {
                         selectedProject = project
-                        installMessage = null
                         scope.launch {
                             versionsLoading = true
                             val result = runCatching { container.modrinth.versions(project.id) }
@@ -142,23 +187,7 @@ fun StoreScreen() {
                             versionsLoading = false
                         }
                     },
-                ) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(project.title, style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            project.description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            "${project.downloads} indirme",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
+                )
             }
         }
     }
@@ -169,6 +198,24 @@ fun StoreScreen() {
             title = { Text(project.title) },
             text = {
                 Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AsyncImage(
+                            model = project.iconUrl,
+                            contentDescription = project.title,
+                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)),
+                            contentScale = ContentScale.Crop,
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(project.slug, style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                "${formatCount(project.downloads)} indirme",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
                     Text(project.description, style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(8.dp))
                     if (versionsLoading) {
@@ -191,7 +238,7 @@ fun StoreScreen() {
                                 Column(Modifier.weight(1f)) {
                                     Text(version.versionNumber, style = MaterialTheme.typography.titleSmall)
                                     Text(
-                                        version.gameVersions.take(3).joinToString(", "),
+                                        "MC " + version.gameVersions.take(3).joinToString(", "),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -233,31 +280,18 @@ fun StoreScreen() {
                                 ?: version.files.firstOrNull()
                             if (file != null) {
                                 installTarget = null
+                                selectedProject = null
                                 scope.launch {
-                                    installProgress = 0 to 1
-                                    installMessage = "İndiriliyor: ${file.filename}"
                                     try {
-                                        val dest = java.io.File(
-                                            container.instances.instanceDir(instance),
-                                            "modpacks/" + file.filename,
+                                        val dest = File(
+                                            File(container.instances.instanceDir(instance), "modpacks"),
+                                            file.filename,
                                         )
-                                        com.discocock.launcher.util.NetFiles.download(file.url, dest)
-                                        installMessage = "Kuruluyor: ${instance.name}"
-                                        val count = container.mrpackInstaller.install(
-                                            dest,
-                                            container.instances.instanceDir(instance),
-                                        ) { _, current, total ->
-                                            installProgress = current to total.coerceAtLeast(1)
-                                        }
-                                        installProgress = null
-                                        installMessage = if (count.isSuccess) {
-                                            "Kurulum tamam: ${instance.name} (${count.getOrDefault(0)} dosya)"
-                                        } else {
-                                            "Hata: " + (count.exceptionOrNull()?.message ?: "bilinmeyen")
-                                        }
+                                        NetFiles.download(file.url, dest)
+                                        // Kurulum arka planda sürer; Mağaza'ndan ayrılsan da devam eder
+                                        container.downloads.installModpack(dest, container.instances.instanceDir(instance), instance.name)
                                     } catch (e: Exception) {
-                                        installProgress = null
-                                        installMessage = "Hata: ${e.message}"
+                                        error = "İndirme hatası: ${e.message}"
                                     }
                                 }
                             }
@@ -273,4 +307,75 @@ fun StoreScreen() {
             },
         )
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProjectCard(project: ModrinthProject, onClick: () -> Unit) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+    ) {
+        Row(
+            Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AsyncImage(
+                model = project.iconUrl,
+                contentDescription = project.title,
+                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.Crop,
+            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    project.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    project.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(6.dp),
+                    ) {
+                        Text(
+                            "MOD PACK",
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        Icons.Filled.Download,
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        formatCount(project.downloads),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 1234567 -> "1,2M", 45000 -> "45K" */
+private fun formatCount(count: Long): String = when {
+    count >= 1_000_000 -> String.format(java.util.Locale.getDefault(), "%.1fM", count / 1_000_000f)
+    count >= 1_000 -> String.format(java.util.Locale.getDefault(), "%.0fK", count / 1_000f)
+    else -> count.toString()
 }

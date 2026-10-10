@@ -4,6 +4,7 @@ import com.discocock.launcher.net.MojangApi
 import com.discocock.launcher.util.JsonFiles
 import com.discocock.launcher.util.LauncherPaths
 import com.discocock.launcher.util.NetFiles
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -122,7 +123,9 @@ class GameInstaller(private val paths: LauncherPaths, private val mojang: Mojang
             _progress.value = Progress.Done("$versionId kuruldu")
             Result.success(clientJar)
         } catch (e: Exception) {
-            _progress.value = Progress.Failed(e.message ?: "Bilinmeyen hata")
+            _progress.value = Progress.Failed(
+                if (e is CancellationException) "İndirme durduruldu" else (e.message ?: "Bilinmeyen hata"),
+            )
             Result.failure(e)
         }
     }

@@ -4,6 +4,7 @@ import android.os.Build
 import com.discocock.launcher.util.JsonFiles
 import com.discocock.launcher.util.LauncherPaths
 import com.discocock.launcher.util.NetFiles
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -139,7 +140,9 @@ class RuntimeManager(private val paths: LauncherPaths) {
             _progress.value = RuntimeProgress.Done("${entry.name} kuruldu")
             Result.success(runtime)
         } catch (e: Exception) {
-            _progress.value = RuntimeProgress.Failed(e.message ?: "Runtime kurulumu başarısız")
+            _progress.value = RuntimeProgress.Failed(
+                if (e is CancellationException) "İndirme durduruldu" else (e.message ?: "Runtime kurulumu başarısız"),
+            )
             Result.failure(e)
         }
     }

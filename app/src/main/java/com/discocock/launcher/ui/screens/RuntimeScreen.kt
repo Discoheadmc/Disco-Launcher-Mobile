@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.discocock.launcher.DiscoApplication
 import com.discocock.launcher.game.RUNTIME_CATALOG
 import com.discocock.launcher.game.RuntimeCatalogEntry
+import com.discocock.launcher.game.RuntimeManager
 import kotlinx.coroutines.launch
 
 /**
@@ -54,8 +55,9 @@ fun RuntimeScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     val runtimes by container.runtimes.runtimes.collectAsState()
+    val rtProgress by container.runtimes.progress.collectAsState()
+    val activeDownloads by container.downloads.active.collectAsState()
     var showCustomDialog by remember { mutableStateOf(false) }
-    var downloadProgress by remember { mutableStateOf<Triple<String, Long, Long>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -86,18 +88,31 @@ fun RuntimeScreen(onBack: () -> Unit) {
             TextButton(onClick = { showCustomDialog = true }) { Text("+ Özel URL ile kur") }
             Spacer(Modifier.height(4.dp))
 
-            downloadProgress?.let { (stage, downloaded, total) ->
-                if (total > 0) {
-                    LinearProgressIndicator(
-                        progress = { downloaded.toFloat() / total.toFloat() },
-                        modifier = Modifier.fillMaxWidth(),
+            when (val rp = rtProgress) {
+                is RuntimeManager.RuntimeProgress.Working -> {
+                    if (rp.total > 0) {
+                        LinearProgressIndicator(
+                            progress = { rp.downloaded.toFloat() / rp.total.toFloat() },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    Text(
+                        "Runtime — ${rp.stage} — ${rp.downloaded / (1024 * 1024)}/${rp.total / (1024 * 1024)} MB",
+                        style = MaterialTheme.typography.bodySmall,
                     )
+                    Spacer(Modifier.height(8.dp))
                 }
-                Text(
-                    "$stage — ${downloaded / (1024 * 1024)} MB / ${total / (1024 * 1024)} MB",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Spacer(Modifier.height(8.dp))
+                is RuntimeManager.RuntimeProgress.Failed -> {
+                    Text(rp.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                }
+                is RuntimeManager.RuntimeProgress.Done -> {
+                    Text(rp.message, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                }
+                else -> Unit
             }
             error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -133,6 +148,7 @@ fun RuntimeScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(RUNTIME_CATALOG, key = { it.name }) { entry ->
+                    val downloading = activeDownloads.any { it.id == "runtime:${entry.name}" || it.id == "runtime:auto" }
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
@@ -143,21 +159,19 @@ fun RuntimeScreen(onBack: () -> Unit) {
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            TextButton(
-                                enabled = runtimes.none { it.name == entry.name },
-                                onClick = {
-                                    error = null
-                                    scope.launch {
-                                        val result = container.runtimes.install(entry) { stage, d, t ->
-                                            downloadProgress = Triple(stage, d, t)
-                                        }
-                                        downloadProgress = null
-                                        if (result.isFailure) {
-                                            error = result.exceptionOrNull()?.message ?: "Kurulum başarısız"
-                                        }
-                                    }
-                                },
-                            ) { Text("Kur") }
+                            when {
+                                downloading -> TextButton(
+                                    onClick = { container.downloads.cancelAll() },
+                                ) { Text("Durdur") }
+                                runtimes.none { it.name == entry.name } -> TextButton(
+                                    onClick = { container.downloads.installRuntime(entry) },
+                                ) { Text("Kur") }
+                                else -> Text(
+                                    "Kurulu",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
                         }
                     }
                 }
@@ -170,16 +184,7 @@ fun RuntimeScreen(onBack: () -> Unit) {
             onDismiss = { showCustomDialog = false },
             onInstall = { entry ->
                 showCustomDialog = false
-                error = null
-                scope.launch {
-                    val result = container.runtimes.install(entry) { stage, d, t ->
-                        downloadProgress = Triple(stage, d, t)
-                    }
-                    downloadProgress = null
-                    if (result.isFailure) {
-                        error = result.exceptionOrNull()?.message ?: "Kurulum başarısız"
-                    }
-                }
+                container.downloads.installRuntime(entry)
             },
         )
     }

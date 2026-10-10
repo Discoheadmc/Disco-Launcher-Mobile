@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
@@ -75,6 +76,7 @@ fun HomeScreen(onOpenVersions: () -> Unit, onOpenRuntime: () -> Unit) {
     val activeId by container.accounts.activeId.collectAsState()
     val installProgress by container.installer.progress.collectAsState()
     val runtimeProgress by container.runtimes.progress.collectAsState()
+    val activeDownloads by container.downloads.active.collectAsState()
     val launchState by container.launcher.state.collectAsState()
     val launchButtonColor = LocalLaunchButtonColor.current
 
@@ -114,6 +116,47 @@ fun HomeScreen(onOpenVersions: () -> Unit, onOpenRuntime: () -> Unit) {
                 AssistChip(onClick = onOpenRuntime, label = { Text("Java Runtime") })
             }
             Spacer(Modifier.height(10.dp))
+
+            // Arka planda süren indirmeler — her yerden durdurulabilir.
+            if (activeDownloads.isNotEmpty()) {
+                Card(shape = RoundedCornerShape(14.dp)) {
+                    Column(Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Filled.Download,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Arka plan indirmeleri (${activeDownloads.size})",
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { container.downloads.cancelAll() }) {
+                                Text("Tümünü durdur")
+                            }
+                        }
+                        activeDownloads.forEach { dl ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    dl.title,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                IconButton(onClick = { container.downloads.cancel(dl.id) }) {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "Durdur",
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
 
             val progress = installProgress
             when (progress) {
@@ -205,10 +248,9 @@ fun HomeScreen(onOpenVersions: () -> Unit, onOpenRuntime: () -> Unit) {
                     val created = container.instances.create(name, versionId, memory)
                     if (created.isSuccess) {
                         showCreateDialog = false
-                        // Zorunlu kurulum: sürüm dosyaları otomatik iner
-                        container.installer.installVanilla(versionId, includeAssets = true)
-                        // Java runtime yoksa cihaza uygun paket otomatik iner
-                        container.runtimes.ensureRuntimeInstalled()
+                        // Zorunlu kurulum — arka planda çalışır, ekran değişse de sürer
+                        container.downloads.installVersion(versionId)
+                        container.downloads.ensureRuntime()
                     }
                 }
             },
@@ -226,9 +268,7 @@ fun HomeScreen(onOpenVersions: () -> Unit, onOpenRuntime: () -> Unit) {
                 scope.launch { launchHomeInstance(container, instance) { msg -> launchError = msg } }
             },
             onInstall = {
-                scope.launch {
-                    container.installer.installVanilla(instance.versionId, includeAssets = true)
-                }
+                container.downloads.installVersion(instance.versionId)
             },
             onSave = { ram, server ->
                 scope.launch {
@@ -288,9 +328,14 @@ private suspend fun launchHomeInstance(
     }
     val runtime = container.runtimes.activeRuntime(container.settings.preferredRuntime.first())
     if (runtime == null) {
+        val downloading = container.downloads.active.value.isNotEmpty()
         onError(
-            "Java runtime kurulu değil.\n\nAna ekrandaki 'Java Runtime' bölümünden bir JRE paketi kur " +
-                "(örn. PojavLauncherTeam openjdk aarch64 derlemesi).",
+            if (downloading) {
+                "Java runtime hâlâ indiriliyor — bitmesini bekle ya da indirmeyi durdurup elle kur."
+            } else {
+                "Java runtime kurulu değil.\n\nBir instance oluşturunca cihazına uygun JRE otomatik indirilir " +
+                    "veya Java Runtime ekranından elle kurabilirsin."
+            },
         )
         return
     }

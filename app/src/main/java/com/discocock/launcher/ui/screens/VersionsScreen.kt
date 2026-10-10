@@ -25,7 +25,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -34,7 +33,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,21 +42,19 @@ import androidx.compose.ui.unit.dp
 import com.discocock.launcher.DiscoApplication
 import com.discocock.launcher.game.GameInstaller
 import com.discocock.launcher.net.ManifestVersion
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VersionsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val container = (context.applicationContext as DiscoApplication).container
-    val scope = rememberCoroutineScope()
 
     val progress by container.installer.progress.collectAsState()
+    val activeDownloads by container.downloads.active.collectAsState()
     var versions by remember { mutableStateOf<List<ManifestVersion>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showSnapshots by remember { mutableStateOf(false) }
-    var includeAssets by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
         loading = true
@@ -93,10 +89,6 @@ fun VersionsScreen(onBack: () -> Unit) {
                 AssistChip(
                     onClick = { showSnapshots = !showSnapshots },
                     label = { Text(if (showSnapshots) "Snapshot: açık" else "Snapshot: kapalı") },
-                )
-                AssistChip(
-                    onClick = { includeAssets = !includeAssets },
-                    label = { Text(if (includeAssets) "Varlıklar: açık" else "Varlıklar: kapalı") },
                 )
             }
             Spacer(Modifier.height(8.dp))
@@ -135,16 +127,17 @@ fun VersionsScreen(onBack: () -> Unit) {
                     .filter { showSnapshots || it.type == "release" }
                     .take(200)
                 items(visible, key = { it.id }) { version ->
+                    val activeDl = activeDownloads.any { it.id == "version:${version.id}" }
                     Card(
-                        modifier = Modifier.fillMaxWidth().clickable {
-                            scope.launch {
-                                container.installer.installVanilla(
-                                    version.id,
-                                    versionUrl = version.url,
-                                    includeAssets = includeAssets,
-                                )
-                            }
-                        },
+                        modifier = Modifier.fillMaxWidth().clickable(
+                            onClick = {
+                                if (!activeDl) {
+                                    // Arka planda iner; bu ekrandan çıkıp başka şey
+                                    // yapabilirsin, ana ekrandan durdurabilirsin.
+                                    container.downloads.installVersion(version.id, version.url)
+                                }
+                            },
+                        ),
                     ) {
                         Row(
                             Modifier.padding(12.dp).fillMaxWidth(),
@@ -160,11 +153,19 @@ fun VersionsScreen(onBack: () -> Unit) {
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
-                            Icon(
-                                Icons.Filled.Download,
-                                contentDescription = "İndir",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            if (activeDl) {
+                                Text(
+                                    "İniyor…",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Filled.Download,
+                                    contentDescription = "İndir",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
                         }
                     }
                 }

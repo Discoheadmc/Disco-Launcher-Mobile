@@ -28,4 +28,5 @@ class AppContainer(context: Context) {
     val launcher = GameLauncher(paths)
     val installer = GameInstaller(paths, mojang)
     val mrpackInstaller = MrpackInstaller()
+    val downloads = DownloadManager(installer, runtimes, mrpackInstaller)
 }
