@@ -70,7 +70,7 @@ class RuntimeManager(private val paths: LauncherPaths) {
             NetFiles.download(entry.url, archive) { downloaded, total ->
                 onProgress("İndiriliyor", downloaded, total)
             }
-            val target = File(paths.runtimesDir, entry.dirName)
+            val target = File(paths.runtimesDir, entry.name)
             target.deleteRecursively()
             target.mkdirs()
             onProgress("Ayıklanıyor", 0, 1)
@@ -86,7 +86,7 @@ class RuntimeManager(private val paths: LauncherPaths) {
 
             val runtime = InstalledRuntime(
                 name = entry.name,
-                dirName = entry.dirName,
+                dirName = entry.name,
                 javaBinary = entry.javaBinary,
                 version = entry.version,
             )

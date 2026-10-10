@@ -22,7 +22,12 @@ data class Account(
     val accessToken: String = "",
     val refreshToken: String = "",
     val expiresAt: Long = 0L,
-)
+) {
+    companion object {
+        const val TYPE_OFFLINE = "offline"
+        const val TYPE_MICROSOFT = "microsoft"
+    }
+}
 
 @Serializable
 private data class AccountStore(
@@ -109,10 +114,5 @@ class AccountsRepository(context: Context) {
         val next = current.copy(activeId = id)
         JsonFiles.write(file, next)
         _activeId.value = id
-    }
-
-    companion object {
-        const val TYPE_OFFLINE = "offline"
-        const val TYPE_MICROSOFT = "microsoft"
     }
 }

@@ -12,10 +12,10 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.staticCompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -31,6 +31,7 @@ import com.discocock.launcher.ui.screens.RuntimeScreen
 import com.discocock.launcher.ui.screens.SettingsScreen
 import com.discocock.launcher.ui.screens.StoreScreen
 import com.discocock.launcher.ui.screens.VersionsScreen
+import com.discocock.launcher.ui.theme.LocalLaunchButtonColor
 
 private data class BottomItem(val route: String, val label: String, val icon: ImageVector)
 
@@ -59,7 +60,7 @@ fun DiscoLauncherApp() {
         BottomItem("settings", "Ayarlar", Icons.Filled.Settings),
     )
 
-    staticCompositionLocalProvider(LocalLaunchButtonColor provides launchButtonColor) {
+    CompositionLocalProvider(LocalLaunchButtonColor provides launchButtonColor) {
         Scaffold(
             bottomBar = {
                 if (items.any { it.route == currentRoute }) {
