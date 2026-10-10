@@ -64,7 +64,7 @@ class AccountsRepository(context: Context) {
         }
         // Deterministic offline UUID, exactly like a vanilla offline-mode server.
         val uuid = UUID.nameUUIDFromBytes("OfflinePlayer:$name".toByteArray()).toString()
-        val account = Account(id = "offline:$name", type = TYPE_OFFLINE, username = name, uuid = uuid)
+        val account = Account(id = "offline:$name", type = Account.TYPE_OFFLINE, username = name, uuid = uuid)
         upsert(account)
         return Result.success(account)
     }
