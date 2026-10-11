@@ -1,5 +1,7 @@
 package com.discocock.launcher.game
 
+import android.content.Context
+import com.discocock.launcher.download.DownloadService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -13,9 +15,11 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * App-scoped download manager: long installs keep running while the user
- * navigates between screens, and every download can be stopped on demand.
+ * navigates between screens or the screen turns off (via [DownloadService]),
+ * and every download can be stopped on demand.
  */
 class DownloadManager(
+    private val context: Context,
     private val installer: GameInstaller,
     private val runtimes: RuntimeManager,
     private val mrpackInstaller: MrpackInstaller,
@@ -81,6 +85,7 @@ class DownloadManager(
 
     private fun start(id: String, info: ActiveDownload, block: suspend () -> Unit) {
         if (jobs.containsKey(id)) return
+        val wasEmpty = jobs.isEmpty()
         val job = scope.launch {
             try {
                 block()
@@ -93,6 +98,10 @@ class DownloadManager(
         jobs[id] = job
         meta[id] = info
         refresh()
+        if (wasEmpty) {
+            // Ekran kapalıyken de inmeye devam etmesi için ön plan servisi.
+            runCatching { DownloadService.start(context) }
+        }
     }
 
     private fun refresh() {

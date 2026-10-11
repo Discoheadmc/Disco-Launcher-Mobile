@@ -172,6 +172,33 @@ fun SettingsScreen() {
         HorizontalDivider()
         Spacer(Modifier.height(16.dp))
 
+        // ---------------- Pil / arka plan ----------------
+        Text("Ekran kapalıyken indirme", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "İndirmeler ön plan servisiyle sürer (CPU kilitli, bildirim görünür). " +
+                "Uzun süren indirmelerde derin uyku moduna (Doze) takılmamak için " +
+                "aşağıdaki düğmeyle uygulamayı pil optimizasyonundan muaf tutabilirsin.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = {
+            runCatching {
+                context.startActivity(
+                    android.content.Intent(
+                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        android.net.Uri.parse("package:" + context.packageName),
+                    ),
+                )
+            }
+        }) {
+            Text("Pil optimizasyonundan muaf tut")
+        }
+
+        Spacer(Modifier.height(20.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(16.dp))
+
         // ---------------- Görünüm ----------------
         Text("Vurgu rengi", style = MaterialTheme.typography.titleMedium)
         Text(

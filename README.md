@@ -32,7 +32,7 @@
 | 🔐 **Hesaplar** | Microsoft (WebView'siz cihaz kodu akışı: MSA → XBL → XSTS → Minecraft) + çevrimdışı (vanilla uyumlu UUID) |
 | 🗂 **Çoklu instance** | Sürüm seçimi, RAM kaydırıcısı, sunucu adresi, per-instance ayarlar |
 | ⬇️ **Zorunlu kurulum** | Instance oluşturunca sürüm + cihazına uygun Java runtime **otomatik** iner |
-| 🌊 **Arka plan indirmeleri** | İndirme sırasında uygulamada gezinebilirsin; her indirmeyi tek tuşla **durdur**; yarım kalan dosyalar temizlenir, tamamlananlar korunur |
+| 🌊 **Arka plan indirmeleri** | İndirme sırasında uygulamada gezinebilirsin; **ekran kapalıyken bile inmeye devam eder** (ön plan servisi + wake lock + bildirim); her indirmeyi tek tuşla **durdur**; yarım kalan dosyalar temizlenir, tamamlananlar korunur |
 | 🛒 **Mağaza** | Modrinth mod paketleri — ikonlar, rozetler, popüler listesi, anahtar gerekmez |
 | ☕ **Runtime yöneticisi** | PojavLauncherTeam openjdk JRE'leri (`.tar.xz`/`.zip`), cihaz mimarisi otomatik algılanır |
 | 🚀 **JVM başlatma zinciri** | Classpath, `-Xmx`, ek JVM argümanları, asset/oyun argümanları; canlı oyun günlüğü |
