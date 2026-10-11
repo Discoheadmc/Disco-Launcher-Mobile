@@ -63,10 +63,10 @@ class DownloadService : Service() {
                     val now = System.currentTimeMillis()
                     if (now - lastNotify < 1000) return@collect
                     lastNotify = now
-                    val progressText = when (install) {
-                        is GameInstaller.Progress.Working ->
+                    val progressText = when {
+                        install is GameInstaller.Progress.Working ->
                             "${install.stage} — ${install.current}/${install.total}"
-                        is RuntimeManager.RuntimeProgress.Working ->
+                        runtime is RuntimeManager.RuntimeProgress.Working ->
                             "JRE ${runtime.downloaded / (1024 * 1024)}/${runtime.total / (1024 * 1024)} MB — ${runtime.stage}"
                         else -> "${active.size} indirme sürüyor"
                     }
